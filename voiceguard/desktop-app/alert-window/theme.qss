@@ -1,0 +1,140 @@
+/* VoiceGuard QSS Theme — Part 1 of UI Spec */
+
+* {
+    font-family: "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
+    outline: none;
+}
+
+QMainWindow, QWidget#rootWidget, QWidget#screenContainer {
+    background-color: #FFFFFF;
+    color: #1A1A1A;
+}
+
+/* Card Component */
+QFrame#cardWidget {
+    background-color: #F7F7F5;
+    border: 1px solid #E3E3E0;
+    border-radius: 8px;
+}
+
+/* Primary Button */
+QPushButton#primaryButton {
+    background-color: #1A1A1A;
+    color: #FFFFFF;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 8px;
+    padding: 12px 24px;
+    border: 1px solid #1A1A1A;
+}
+
+QPushButton#primaryButton:hover {
+    background-color: #2E2E2E;
+    border: 1px solid #2E2E2E;
+}
+
+QPushButton#primaryButton:pressed {
+    background-color: #000000;
+    border: 1px solid #000000;
+}
+
+QPushButton#primaryButton:focus {
+    border: 1px solid #1A1A1A;
+}
+
+/* Secondary / Outlined Button */
+QPushButton#secondaryButton {
+    background-color: transparent;
+    color: #1A1A1A;
+    font-size: 14px;
+    font-weight: 500;
+    border: 1px solid #E3E3E0;
+    border-radius: 8px;
+    padding: 12px 24px;
+}
+
+QPushButton#secondaryButton:hover {
+    background-color: #F7F7F5;
+    border: 1px solid #D0D0CD;
+}
+
+QPushButton#secondaryButton:pressed {
+    background-color: #EAEAE6;
+}
+
+QPushButton#secondaryButton:focus {
+    border: 1px solid #1A1A1A;
+}
+
+/* Text Hierarchy */
+QLabel#displayLabel {
+    font-size: 40px;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+QLabel#titleLabel {
+    font-size: 24px;
+    font-weight: 600;
+    color: #1A1A1A;
+}
+
+QLabel#subtitleLabel {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1A1A1A;
+}
+
+QLabel#bodyLabel {
+    font-size: 16px;
+    font-weight: 400;
+    color: #1A1A1A;
+}
+
+QLabel#labelStyle {
+    font-size: 14px;
+    font-weight: 500;
+    color: #6B6B68;
+}
+
+QLabel#captionLabel {
+    font-size: 13px;
+    font-weight: 400;
+    color: #6B6B68;
+}
+
+/* Status Indicator Real */
+QFrame#statusIndicatorReal {
+    background-color: #EAF2EC;
+    border-radius: 8px;
+}
+
+QLabel#statusWordReal {
+    color: #3F7D5C;
+    font-size: 40px;
+    font-weight: 700;
+}
+
+/* Status Indicator Clone */
+QFrame#statusIndicatorClone {
+    background-color: #F7EAE9;
+    border-radius: 8px;
+}
+
+QLabel#statusWordClone {
+    color: #A8453F;
+    font-size: 40px;
+    font-weight: 700;
+}
+
+/* List Row */
+QFrame#listRow {
+    background-color: transparent;
+    border: none;
+    border-bottom: 1px solid #E3E3E0;
+}
+
+QFrame#listRowLast {
+    background-color: transparent;
+    border: none;
+}

@@ -1,0 +1,127 @@
+# ==============================================================================
+# VoiceGuard .gitignore — Production & Deployment Clean
+# ==============================================================================
+
+# ── Instruction, Blueprint & Audit Files ──────────────────────────────────────
+VoiceGuard_*.md
+*INSTRUCTION*.md
+*BLUEPRINT*.md
+*AUDIT*.md
+*FIX*.md
+voiceguard/docs/
+docs/
+audit-report.md
+diagnostic-report.md
+fix-verification-report.md
+progress-log.md
+ui-progress-log.md
+
+# ── Run Scripts, Diagnostic, Gate & Test Scripts ──────────────────────────────
+*.bat
+!gradlew.bat
+run_*.bat
+run_*.py
+**/run_*.py
+diag_*.py
+**/diag_*.py
+rerun_*.py
+**/rerun_*.py
+test_*.py
+**/test_*.py
+verify_gate*.py
+**/verify_gate*.py
+download_and_run.py
+**/download_and_run.py
+**/core-detection/compress_*.py
+**/core-detection/quick_eval*.py
+**/core-detection/organize_dataset.py
+**/core-detection/verify_dataset.py
+**/core-detection/finetune.py
+**/core-detection/export_mobile_model.py
+**/core-detection/aasist/download_dataset.py
+**/core-detection/aasist/main.py
+**/core-detection/aasist/evaluation.py
+
+# ── Audio Files & Datasets ───────────────────────────────────────────────────
+*.wav
+*.mp3
+*.flac
+*.m4a
+*.ogg
+*.opus
+*.mp4
+*.zip
+*.tar
+*.tar.gz
+**/test_audio/
+test_audio/
+**/datasets/
+datasets/
+
+# ── Python & Virtual Environments ────────────────────────────────────────────
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.pyw
+.Python
+*.egg-info/
+**/*.egg-info/
+venv/
+**/venv/
+.venv/
+**/.venv/
+env/
+**/env/
+ENV/
+**/ENV/
+pyrightconfig.json
+**/pyrightconfig.json
+
+# ── Mobile (Android / Gradle) ────────────────────────────────────────────────
+.gradle/
+**/.gradle/
+build/
+**/build/
+captures/
+**/captures/
+*.apk
+*.aab
+*.aar
+local.properties
+**/local.properties
+.cxx/
+**/.cxx/
+
+# ── Blockchain & Node ────────────────────────────────────────────────────────
+node_modules/
+**/node_modules/
+**/artifacts/
+**/cache/
+**/typechain-types/
+package-lock.json
+**/package-lock.json
+
+# ── IDEs, OS & Temporary Files ───────────────────────────────────────────────
+.idea/
+**/.idea/
+.vscode/
+**/.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+*.tmp
+*.bak
+*.swp
+campaign_db.json
+
+# ── Build & Packaging Output ─────────────────────────────────────────────────
+dist/
+**/dist/
+*.spec
+*.exe
