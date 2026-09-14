@@ -1,8 +1,24 @@
 # VoiceGuard 🛡️
 
-**Real-time AI Voice Clone Detector — Built for the Demo**
+**Real-time AI Voice Clone Detector & Defense Platform**
 
 VoiceGuard detects cloned/synthetic voices on live calls (Zoom, WhatsApp Desktop, Meet) and instantly alerts you with a visual signal. It uses an on-device AASIST-L deep learning model — no audio leaves your device.
+
+---
+
+## 🌐 Live Web Prototype (SIH Evaluation)
+
+An interactive web prototype is included for instant evaluation in any web browser without local installation:
+- **Test presets:** Authentic human speech vs. AI cloned deepfake voice
+- **Live upload:** Test any custom audio clip (`.wav`, `.mp3`)
+- **Visual Gauge:** Real-time circular confidence ring & spectrogram verdict
+- **Evidence generation:** SHA-256 evidence hashing + direct DoT Chakshu reporting link
+
+Run locally:
+```bash
+python -m uvicorn app:app --reload
+```
+Or deploy directly to **Render** with 1-click using the included `render.yaml`.
 
 ---
 
