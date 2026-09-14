@@ -8,7 +8,7 @@ SILENCE_RMS_THRESHOLD  = 0.020   # ambient silence RMS floor
 CLONE_ENTER_THRESHOLD  = 0.80   # high-confidence threshold to enter CLONED state
 REAL_ENTER_THRESHOLD   = 0.50   # threshold to recover back to REAL state
 CONSECUTIVE_FRAMES     = 3      # 3 frames (~3s) window for fast, reliable transitions
-VAD_MIN_VOICED_SECONDS = 0.40   # minimum seconds of voiced speech energy in window
+VAD_MIN_VOICED_SECONDS = 1.00   # require at least 1.0s of voiced speech in 4.04s window (prevents single-word 'hello' false triggers)
 VAD_FRAME_LEN          = 320    # VAD sub-frame size (20ms @ 16kHz)
 VAD_ENERGY_THRESHOLD   = 0.012  # per-frame RMS to count as voiced
 
@@ -29,7 +29,8 @@ def is_silence(chunk) -> bool:
 def has_enough_voiced_speech(chunk) -> bool:
     """VAD check: require at least VAD_MIN_VOICED_SECONDS of actual speech energy
     with speech-like crest factor (dynamic range).
-    Prevents background hum or buffer drop artifacts from triggering false detections.
+    Prevents background hum, buffer drop artifacts, and isolated single-syllable bursts
+    (like a 0.4s 'hello') from triggering false detections before full speech context arrives.
     """
     arr = np.asarray(chunk, dtype=np.float32)
     if len(arr) < VAD_FRAME_LEN:
@@ -79,17 +80,19 @@ class ConfidenceSmoother:
         """
         self.window.append(spoof_prob)
 
-        # Multi-frame consensus hysteresis
+        # Multi-frame consensus hysteresis:
+        # Strictly require at least 2 consistent frames in the sliding window before entering CLONED.
+        # Single-frame acoustic spikes or glitches can NEVER trigger a clone detection alone.
         if len(self.window) >= 1:
             cloned_votes = sum(1 for p in self.window if p >= self.clone_enter_threshold)
             real_votes   = sum(1 for p in self.window if p < self.real_enter_threshold)
 
-            # Enter CLONED on either 2 consistent clone frames OR a decisive high-confidence frame (>= 0.90)
-            if (cloned_votes >= 2 or spoof_prob >= 0.90) and spoof_prob >= self.clone_enter_threshold and self.state != "CLONED":
+            # Enter CLONED on 2 consistent clone frames (>= 0.80)
+            if cloned_votes >= 2 and spoof_prob >= self.clone_enter_threshold and self.state != "CLONED":
                 self.state            = "CLONED"
                 self.state_changed_at = timestamp
-            # Recover to REAL on either 2 consistent real frames OR a decisive authentic frame (< 0.20)
-            elif (real_votes >= 2 or spoof_prob < 0.20) and spoof_prob < self.real_enter_threshold and self.state != "REAL":
+            # Recover to REAL on 2 consistent real frames (< 0.50) OR a decisive authentic frame (< 0.15)
+            elif (real_votes >= 2 or spoof_prob < 0.15) and spoof_prob < self.real_enter_threshold and self.state != "REAL":
                 self.state            = "REAL"
                 self.state_changed_at = timestamp
 

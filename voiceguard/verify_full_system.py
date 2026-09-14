@@ -140,8 +140,37 @@ def run_tests():
     assert inferred_count == 0, f"Silence/noise leaked through gate ({inferred_count} chunks)!"
     print(">>> Test 4 Result: PERFECT NOISE IMMUNITY (0 LEAKED FRAMES, STATE HOLDS STABLE)!")
 
+    # --- Test 5: Short Utterance ('Hello') False-Positive Immunity ---
+    print("\n--- TEST 5: Short Utterance ('Hello') False-Positive Immunity ---")
+    real_sample, _ = sf.read('test_audio/real/real_voice_1.wav')
+    hello_speech = real_sample[19200:28800].astype(np.float32)  # 0.6s real voice 'hello'
+    
+    # Simulate 8s microphone stream with ambient noise where user says just 'hello' at t=2.0s
+    stream_noise = np.random.randn(int(8.0 * 16000)).astype(np.float32) * 0.003
+    stream_noise[32000:32000+len(hello_speech)] += hello_speech
+    
+    chunker = AudioChunker(sample_rate=16000, hop_seconds=0.5)
+    smoother = ConfidenceSmoother()
+    
+    hello_states = []
+    for i in range(0, len(stream_noise), 8000):
+        block = stream_noise[i:i+8000]
+        t = i / 16000.0
+        for c in chunker.push(block):
+            if is_silence(c) or not has_enough_voiced_speech(c):
+                continue
+            p = model.predict(c)
+            r = smoother.update(p["spoof_prob"], t)
+            hello_states.append(r["state"])
+
+    has_cloned_false_alarm = "CLONED" in hello_states
+    print(f"  Utterance: Single 0.6s 'Hello' in 8s stream")
+    print(f"  Clone states triggered: {has_cloned_false_alarm} (target: False)")
+    assert not has_cloned_false_alarm, "FAILED: Speaking 'Hello' triggered a false clone alert!"
+    print(">>> Test 5 Result: PERFECT IMMUNITY ON SHORT UTTERANCES ('HELLO' NEVER TRIGGERS CLONE)!")
+
     print("\n" + "=" * 70)
-    print("ALL TESTS PASSED WITH 100% SUCCESS!")
+    print("ALL 5 TESTS PASSED WITH 100% SUCCESS!")
     print("=" * 70)
 
 if __name__ == "__main__":

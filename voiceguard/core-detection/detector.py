@@ -72,6 +72,13 @@ class DetectorModel:
             else:
                 chunk = np.zeros(64600, dtype=np.float32)
 
+        # ── Smooth Edge Taper ─────────────────────────────────────────────
+        # Eliminate boundary step discontinuities that create high-frequency SincNet artifacts
+        if len(chunk) >= 400:
+            w = np.sin(np.linspace(0, np.pi / 2, 200, dtype=np.float32)) ** 2
+            chunk[:200] *= w
+            chunk[-200:] *= w[::-1]
+
         x = torch.tensor(chunk, dtype=torch.float32).unsqueeze(0)  # (1, 64600)
         with torch.no_grad():
             _, out = self.model(x)              # returns (graph_embedding, logits)
