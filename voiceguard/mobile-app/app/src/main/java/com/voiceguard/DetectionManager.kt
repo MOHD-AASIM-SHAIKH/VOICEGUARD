@@ -216,7 +216,14 @@ object DetectionManager {
 
                             val res = inferenceRunner?.predict(window)
                             if (res != null) {
-                                _confidence.value = res.confidence
+                                // Update confidence display directly — onStateChanged only fires
+                                // on actual REAL<->CLONED transitions (not every frame)
+                                val displayConf = if (inferenceRunner?.smoothedState == "CLONED") {
+                                    res.spoofProb
+                                } else {
+                                    1.0f - res.spoofProb
+                                }
+                                _confidence.value = displayConf
                             }
                         }
                     } else if (read < 0) {
@@ -286,9 +293,13 @@ object DetectionManager {
 
     // Demo / Simulation triggers
     fun simulateClone(conf: Float = 0.94f) {
+        val wasCloned = _detectionState.value == "CLONED"
         _confidence.value = conf
         _detectionState.value = "CLONED"
-        triggerVibration()
+        // Only vibrate on rising edge — same guard as real detection path
+        if (!wasCloned) {
+            triggerVibration()
+        }
     }
 
     fun simulateReal() {

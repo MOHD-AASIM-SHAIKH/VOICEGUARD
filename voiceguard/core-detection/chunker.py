@@ -6,7 +6,7 @@ import numpy as np
 
 
 class AudioChunker:
-    def __init__(self, sample_rate=16000, window_len=64600, hop_seconds=1.0):
+    def __init__(self, sample_rate=16000, window_len=64600, hop_seconds=0.5):
         self.sample_rate = sample_rate
         self.window_len  = window_len              # exact model input length — 64,600 @ 16kHz ≈ 4.04s
         self.hop_len     = int(sample_rate * hop_seconds)
@@ -27,8 +27,6 @@ class AudioChunker:
 
         while len(self.buffer) >= self.window_len:
             chunks.append(self.buffer[:self.window_len].copy())
-            if len(self.buffer) <= self.window_len:
-                break
             self.buffer = self.buffer[self.hop_len:]
 
         return chunks

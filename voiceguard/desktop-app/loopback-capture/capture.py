@@ -9,12 +9,20 @@ The caller (DetectionEngine) must read this first and display it in the UI.
 import soundcard as sc
 import numpy as np
 import time
+import warnings
+# Suppress Windows WASAPI buffer discontinuity warnings — these are handled by the VAD gate upstream
+warnings.filterwarnings("ignore", category=RuntimeWarning, module="soundcard")
+try:
+    from soundcard.mediafoundation import SoundcardRuntimeWarning
+    warnings.filterwarnings("ignore", category=SoundcardRuntimeWarning)
+except ImportError:
+    pass
 
 
-def get_loopback_stream(sample_rate: int = 16000, blocksize: int = 4000):
+def get_loopback_stream(sample_rate: int = 16000, blocksize: int = 8000):
     """Primary source: system audio loopback.
     Desktop calls (Zoom/Meet/WhatsApp Desktop) output through system audio directly —
-    loopback is correct and primary, not a fallback.
+    loopback captures incoming call speech.
 
     Yields source_label string first, then mono float32 numpy arrays indefinitely.
     """
@@ -24,16 +32,7 @@ def get_loopback_stream(sample_rate: int = 16000, blocksize: int = 4000):
         source_label = f"Loopback · {mic.name}"
     except Exception as e:
         print(f"[Capture] Loopback unavailable ({e}), falling back to microphone")
-        try:
-            mic = sc.default_microphone()
-            source_label = f"Microphone (fallback — loopback unavailable) · {mic.name}"
-        except Exception as e2:
-            print(f"[Capture] Microphone also unavailable ({e2}), using synthetic noise")
-            yield "Simulated noise floor (no audio device)"
-            while True:
-                time.sleep(blocksize / sample_rate)
-                yield (np.random.randn(blocksize) * 0.001).astype(np.float32)
-            return
+        return get_microphone_stream(sample_rate=sample_rate, blocksize=blocksize)
 
     yield source_label  # caller reads this first and shows it in the UI
 
@@ -42,6 +41,40 @@ def get_loopback_stream(sample_rate: int = 16000, blocksize: int = 4000):
             data = recorder.record(numframes=blocksize)
             mono = data.mean(axis=1) if data.ndim > 1 else data.ravel()
             yield mono.astype(np.float32)
+
+
+def get_microphone_stream(sample_rate: int = 16000, blocksize: int = 8000):
+    """Microphone source: captures user's voice directly from microphone.
+    Ideal for testing with user's own live speech.
+
+    Yields source_label string first, then mono float32 numpy arrays indefinitely.
+    """
+    try:
+        mic = sc.default_microphone()
+        source_label = f"Microphone · {mic.name}"
+    except Exception as e:
+        print(f"[Capture] Microphone unavailable ({e}), using synthetic silence")
+        yield "Simulated silence (no mic device)"
+        while True:
+            time.sleep(blocksize / sample_rate)
+            yield np.zeros(blocksize, dtype=np.float32)
+        return
+
+    yield source_label
+
+    with mic.recorder(samplerate=sample_rate) as recorder:
+        while True:
+            data = recorder.record(numframes=blocksize)
+            mono = data.mean(axis=1) if data.ndim > 1 else data.ravel()
+            yield mono.astype(np.float32)
+
+
+def get_capture_stream(source: str = "loopback", sample_rate: int = 16000, blocksize: int = 8000):
+    """Universal source selector: 'loopback' or 'microphone'."""
+    if source == "microphone":
+        return get_microphone_stream(sample_rate=sample_rate, blocksize=blocksize)
+    else:
+        return get_loopback_stream(sample_rate=sample_rate, blocksize=blocksize)
 
 
 def get_file_stream(file_path: str, sample_rate: int = 16000, blocksize: int = 4000):

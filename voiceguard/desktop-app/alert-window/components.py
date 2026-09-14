@@ -37,13 +37,13 @@ COLOR_TEXT_SECONDARY = QColor("#6B6B68")
 
 
 class ConfidenceRing(QWidget):
-    """Circular confidence arc — Part 5.1 spec.
+    """Circular confidence arc — Part 5.1 robust spec.
 
     NO internal QTimer. Ring is static during silence. Only set_value() may
-    change the displayed value, and set_value() must only be called from
-    on_detection_result() in the main window.
+    change the displayed value, and set_value() is called exclusively from
+    on_detection_result() in the main window when new predictions arrive.
 
-    set_value() uses QPropertyAnimation for smooth visual transition (400ms
+    set_value() uses QPropertyAnimation for smooth visual transition (350ms
     ease-out) when a new prediction arrives, then holds that position until
     the next call.
     """
@@ -59,19 +59,19 @@ class ConfidenceRing(QWidget):
         self._state       = state.upper()
         self._caption     = caption
 
-        # Smooth transition animation — only fires when set_value() is called
+        # Smooth transition animation — only fires on prediction update
         self._anim = QPropertyAnimation(self, b"confidenceProp")
-        self._anim.setDuration(400)
+        self._anim.setDuration(350)
         self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
 
         # Backwards-compatibility shims so existing screen code keeps working
         self.caption_label = _DummyPropertyLabel(
             lambda: self._caption,
-            lambda t: self.update_data(caption=t)
+            lambda t: self.set_caption(t)
         )
         self.state_label = _DummyPropertyLabel(
             lambda: self._state,
-            lambda t: self.update_data(state=t)
+            lambda t: self.update_state(t)
         )
 
     # ── Qt property for animation ────────────────────────────────────────────
@@ -88,42 +88,47 @@ class ConfidenceRing(QWidget):
     # ── Public API ───────────────────────────────────────────────────────────
 
     def set_value(self, confidence: float, state: str):
-        """THE ONLY WAY this ring's value may change.
-
-        Call exclusively from on_detection_result(), and only when that result
-        came from a real, non-silence-gated prediction. NEVER call from a timer,
-        tick loop, or ambient/idle simulation — doing so reintroduces the
-        idle-movement bug.
-
-        During silence the caller simply does not call set_value() and the ring
-        holds its current position statically.
+        """THE PRIMARY WAY this ring's value updates.
+        Smoothly animates arc to the new confidence value.
         """
         self._state = state.upper()
+        target = max(0.0, min(1.0, float(confidence)))
         self._anim.stop()
         self._anim.setStartValue(self._confidence)
-        self._anim.setEndValue(max(0.0, min(1.0, float(confidence))))
+        self._anim.setEndValue(target)
         self._anim.start()
+
+    def set_caption(self, caption: str):
+        """Update caption (e.g. elapsed time) without disrupting running animations."""
+        if self._caption != caption:
+            self._caption = caption
+            self.update()
 
     def update_data(self, state: str = None, confidence: float = None, caption: str = None):
         """Backwards-compatible updater used by screen init code and loading indicator."""
         if state is not None:
             self._state = state.upper()
-        if confidence is not None:
-            # Called during init/loading — animate to initial value
-            self._anim.stop()
-            self._anim.setStartValue(self._confidence)
-            self._anim.setEndValue(max(0.0, min(1.0, float(confidence))))
-            self._anim.start()
         if caption is not None:
             self._caption = caption
-        self.update()
+        if confidence is not None:
+            target = max(0.0, min(1.0, float(confidence)))
+            self._anim.stop()
+            self._anim.setStartValue(self._confidence)
+            self._anim.setEndValue(target)
+            self._anim.start()
+        else:
+            self.update()
 
     def update_state(self, state: str, caption: str = None):
         self.update_data(state=state, caption=caption)
 
     def set_audio_level(self, level: float):
-        """No-op: waveform bars are removed. Ring is static during silence."""
-        pass   # intentionally empty — callers may still call this, it's safe to ignore
+        """No-op: ring is static during silence."""
+        pass
+
+    def closeEvent(self, event):
+        self._anim.stop()
+        super().closeEvent(event)
 
     # ── Painting ─────────────────────────────────────────────────────────────
 
@@ -144,40 +149,50 @@ class ConfidenceRing(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawArc(rect, 0, 360 * 16)
 
-        # 2. Choose colors and label strings
+        # 2. Determine state colors & typography
         if self._state in ("CLONE", "CLONED"):
             arc_color = COLOR_CLONE
             line1     = "CLONE"
             line2     = "DETECTED"
-            pct_text  = f"{int(self._confidence * 100)}% Spoof"
+            pct_text  = f"{int(round(self._confidence * 100))}% Spoof"
         elif self._state == "PAUSED":
             arc_color = QColor("#9CA3AF")
             line1     = "PAUSED"
             line2     = ""
             pct_text  = "Monitoring Off"
-        else:                               # REAL / loading
+        else:  # REAL / loading
             arc_color = COLOR_REAL
             line1     = "REAL"
             line2     = ""
-            pct_text  = ("Starting…" if self._confidence < 0.01
-                         else f"{int(self._confidence * 100)}% Authentic")
+            if self._confidence < 0.01:
+                pct_text = "Starting…"
+            else:
+                pct_text = f"{int(round(self._confidence * 100))}% Authentic"
 
-        # 3. Progress arc
-        arc_pen = QPen(arc_color, stroke)
-        arc_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        painter.setPen(arc_pen)
-        span = int(self._confidence * 360.0 * 16.0)
-        painter.drawArc(rect, 90 * 16, -span)
+        # 3. Progress arc — only draw if meaningful confidence and not paused
+        if self._state != "PAUSED" and self._confidence > 0.01:
+            if self._confidence >= 0.999:
+                # Full 360 ring: draw seamless full circle (avoids round-cap collision)
+                arc_pen = QPen(arc_color, stroke)
+                arc_pen.setCapStyle(Qt.PenCapStyle.FlatCap)
+                painter.setPen(arc_pen)
+                painter.drawArc(rect, 0, 360 * 16)
+            else:
+                # Partial arc: start at 12 o'clock (90 deg), sweep clockwise (-span)
+                arc_pen = QPen(arc_color, stroke)
+                arc_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                painter.setPen(arc_pen)
+                span = int(self._confidence * 360.0 * 16.0)
+                painter.drawArc(rect, 90 * 16, -span)
 
-        # 4. Text layout — all text confined to inner circle (radius ≈ 82px from centre)
-        #    Widget centre = (120, 120) for a 240×240 widget.
-        #    Two-line layout (CLONE/DETECTED): line1 at cy-22, line2 at cy-2, pct at cy+20
-        #    Single-line layout (REAL/PAUSED): line1 at cy-14, pct at cy+12
+        # 4. Text layout — perfectly centered inside inner circle
         cx = w / 2.0
         cy = h / 2.0
+        TW = 148.0
+        TX = cx - TW / 2.0
 
-        # State word(s)
-        font_state = QFont("Inter")
+        font_family = "Segoe UI"
+        font_state = QFont(font_family)
         font_state.setPointSize(14)
         font_state.setWeight(QFont.Weight.Bold)
         painter.setFont(font_state)
@@ -185,43 +200,47 @@ class ConfidenceRing(QWidget):
 
         if line2:
             painter.drawText(
-                QRectF(cx - 78, cy - 30, 156, 26),
+                QRectF(TX, cy - 34, TW, 24),
                 Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
                 line1
             )
             painter.drawText(
-                QRectF(cx - 78, cy - 4, 156, 26),
+                QRectF(TX, cy - 10, TW, 24),
                 Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
                 line2
             )
-            pct_y = cy + 24
+            pct_y = cy + 18
+            cap_y = cy + 40
         else:
             painter.drawText(
-                QRectF(cx - 78, cy - 20, 156, 28),
+                QRectF(TX, cy - 22, TW, 26),
                 Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
                 line1
             )
-            pct_y = cy + 12
+            pct_y = cy + 8
+            cap_y = cy + 30
 
-        # Percentage / subtitle
-        font_val = QFont("Inter")
+        # Percentage text
+        font_val = QFont(font_family)
         font_val.setPointSize(10)
+        font_val.setWeight(QFont.Weight.DemiBold)
         painter.setFont(font_val)
         painter.setPen(COLOR_TEXT_SECONDARY)
         painter.drawText(
-            QRectF(cx - 78, pct_y, 156, 18),
+            QRectF(TX, pct_y, TW, 18),
             Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
             pct_text
         )
 
-        # Caption (smallest, only if provided and fits within lower arc area)
+        # Caption text
         if self._caption:
-            font_cap = QFont("Inter")
+            font_cap = QFont(font_family)
             font_cap.setPointSize(8)
+            font_cap.setWeight(QFont.Weight.Normal)
             painter.setFont(font_cap)
-            painter.setPen(QColor("#9CA3AF"))
+            painter.setPen(QColor("#8E8E93"))
             painter.drawText(
-                QRectF(cx - 78, pct_y + 20, 156, 16),
+                QRectF(TX, cap_y, TW, 16),
                 Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
                 self._caption
             )

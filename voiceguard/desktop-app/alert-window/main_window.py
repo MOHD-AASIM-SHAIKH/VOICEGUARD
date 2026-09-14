@@ -52,9 +52,11 @@ class VoiceGuardMainWindow(QMainWindow):
         self.resize(480, 720)
         self.setMinimumSize(390, 600)
 
+        self.audio_source = "loopback"
         self.latest_spoof_prob = 0.05   # track honest last value for display
         self.start_time = time.time()
         self._model_loading = True
+        self._last_emitted_state = "REAL"  # edge-gate: only trigger alert on REAL→CLONED
 
         # ── Stack ─────────────────────────────────────────────────────────────
         self.stack = QStackedWidget()
@@ -97,6 +99,9 @@ class VoiceGuardMainWindow(QMainWindow):
         if self.detector_active:
             self._start_detector_thread()
 
+    # Expose smoother for pause/reset (set by _start_detector_thread once created)
+    _smoother = None
+
     # ── Loading display ───────────────────────────────────────────────────────
 
     def _set_loading_display(self):
@@ -135,6 +140,7 @@ class VoiceGuardMainWindow(QMainWindow):
         self.screen_idle.simulate_clone_clicked.connect(self.trigger_clone_detected)
         self.screen_idle.guarded_tx_clicked.connect(self.show_approval)
         self.screen_idle.blockchain_ledger_clicked.connect(self.show_history)
+        self.screen_idle.source_toggle_clicked.connect(self.toggle_audio_source)
 
         self.screen_alert.hang_up_clicked.connect(self.show_idle)
         self.screen_alert.report_clicked.connect(self.show_report_confirmation)
@@ -147,44 +153,68 @@ class VoiceGuardMainWindow(QMainWindow):
 
         self.screen_history.back_clicked.connect(self.show_idle)
 
+    def toggle_audio_source(self):
+        """Toggle between System Loopback (Calls) and Microphone (User Voice)."""
+        if self.audio_source == "loopback":
+            self.audio_source = "microphone"
+            self.screen_idle.btn_toggle_source.setText("🔊 Loopback Mode")
+            self.screen_idle.btn_toggle_source.setToolTip("Currently listening to Microphone. Click to switch to System Loopback.")
+        else:
+            self.audio_source = "loopback"
+            self.screen_idle.btn_toggle_source.setText("🎙️ Mic Mode")
+            self.screen_idle.btn_toggle_source.setToolTip("Currently listening to System Loopback. Click to switch to Microphone.")
+        if hasattr(self.screen_idle, "context_body"):
+            self.screen_idle.context_body.setText(
+                f"Switching audio input to {self.audio_source.capitalize()}…\n"
+                "VoiceGuard on-device monitoring active"
+            )
+
     def _update_elapsed(self):
         if self._model_loading or not self.detector_active:
             return
         elapsed = int(time.time() - self.start_time)
         m, s = divmod(elapsed, 60)
         if self.stack.currentWidget() == self.screen_idle:
-            self.screen_idle.circular_meter.update_data(caption=f"Active · {m:02d}:{s:02d}")
+            self.screen_idle.circular_meter.set_caption(f"Active · {m:02d}:{s:02d}")
 
     # ── Navigation slots ─────────────────────────────────────────────────────
 
     def show_idle(self):
+        self._last_emitted_state = "REAL"
+        if self._smoother is not None:
+            self._smoother.reset()
         self.stack.setCurrentWidget(self.screen_idle)
 
     def trigger_clone_detected(self, confidence: float = 0.96):
-        """Used by keyboard shortcut 'C' and by on_detection_result when CLONED."""
-        self.screen_alert.circular_meter.update_data(
-            state="CLONE", confidence=confidence, caption="High-Risk AI Audio"
-        )
-        self.stack.setCurrentWidget(self.screen_alert)
-        self.screen_alert.trigger_alert_transition()
+        """Directly navigate to Report & Blockchain Notarization screen when clone is detected."""
+        self.latest_spoof_prob = confidence
+        self._last_emitted_state = "CLONED"
+        self.show_report_confirmation()
 
     def show_report_confirmation(self):
         import datetime
         now = datetime.datetime.now()
-        # Display honest confidence: 1 - last spoof_prob
-        conf_display = int((1.0 - self.latest_spoof_prob) * 100) if self.latest_spoof_prob < 0.5 \
-                       else int(self.latest_spoof_prob * 100)
+        # Honest confidence calculation (clamp to 50–99%)
+        if self.latest_spoof_prob >= 0.5:
+            conf_display = int(round(self.latest_spoof_prob * 100))
+        else:
+            conf_display = int(round((1.0 - self.latest_spoof_prob) * 100))
+        conf_display = max(50, min(99, conf_display))
 
+        channel = "Microphone" if self.audio_source == "microphone" else "WhatsApp VoIP"
+
+        old_idx = self.stack.indexOf(self.screen_report)
         self.stack.removeWidget(self.screen_report)
         self.screen_report.deleteLater()
         self.screen_report = Screen3Report(
             time_str=now.strftime("%H:%M, %b %d"),
             confidence_str=f"{conf_display}%",
-            call_type_str="WhatsApp"
+            call_type_str=channel
         )
         self.screen_report.confirm_report_clicked.connect(self.handle_confirm_report)
         self.screen_report.cancel_clicked.connect(self.show_idle)
-        self.stack.insertWidget(2, self.screen_report)
+        insert_idx = old_idx if old_idx >= 0 else 2
+        self.stack.insertWidget(insert_idx, self.screen_report)
         self.stack.setCurrentWidget(self.screen_report)
 
     def show_approval(self, amount: str = "₹50,00,000", to: str = "ABC Industries Pvt Ltd"):
@@ -197,26 +227,40 @@ class VoiceGuardMainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.screen_history)
 
     def handle_confirm_report(self):
-        import datetime
+        import datetime, hashlib, random
         now = datetime.datetime.now()
+        raw_seed = f"{now.isoformat()}-{self.latest_spoof_prob}".encode()
+        tx_hash = "0x" + hashlib.sha256(raw_seed).hexdigest()[:10] + "..."
+        sha_full = hashlib.sha256(raw_seed).hexdigest()
+        sha_display = "0x" + sha_full[:12] + "..." + sha_full[-8:]
+        block_num = str(4829300 + random.randint(10, 999))
+
+        channel = "Microphone" if self.audio_source == "microphone" else "WhatsApp VoIP"
+
         new_incident = {
-            "timestamp": f"Just now · WhatsApp",
-            "sha256": "0x0be47a255930...af5b5d28",
-            "block": "4829315",
-            "tx": "0x7a83d4c510...",
+            "timestamp": f"Just now · {channel}",
+            "sha256": sha_display,
+            "block": block_num,
+            "tx": tx_hash,
             "status": "VERIFIED ON-CHAIN",
             "chakshu_url": (
                 f"https://sancharsaathi.gov.in/sfc/"
-                f"?reportedAt={now.strftime('%H:%M')}&callType=voip&confidence=0.94"
+                f"?reportedAt={now.strftime('%H:%M')}&callType=voip&confidence={self.latest_spoof_prob:.2f}"
             )
         }
         self.reports_history.insert(0, new_incident)
         self.screen_history.set_reports(self.reports_history)
-        self.show_idle()
+        # Directly navigate to Blockchain Ledger screen to view verified on-chain incident
+        self.show_history()
+
 
     def handle_stop_protection(self):
         self.detector_active = not self.detector_active
         if self.detector_active:
+            # Resuming — reset the entire state machine
+            self._last_emitted_state = "REAL"
+            if self._smoother is not None:
+                self._smoother.reset()
             self.screen_idle.btn_stop.setText("Stop Protection")
             self.screen_idle.btn_stop.set_variant("secondary")
             self.screen_idle.circular_meter.update_data(
@@ -244,35 +288,44 @@ class VoiceGuardMainWindow(QMainWindow):
 
     def on_audio_level(self, rms: float):
         """RMS level for visual feedback — does NOT drive the ring."""
-        pass   # can wire to a level bar if added in future; ring is not touched here
+        pass
 
     def on_detection_result(self, result: dict):
         """THE ONLY PLACE the ring value changes.
         Called only when the detection loop produced a real, non-silence-gated prediction.
-
-        Part 2 auto-dismiss: if smoother returns REAL while alert is showing, dismiss.
         """
         if not self.detector_active:
             return
 
-        state      = result["state"]                    # "REAL" | "CLONED"
-        disp_conf  = result["real_confidence_display"]  # 1.0 - spoof_prob — honest, no flooring
+        state = result["state"]                    # "REAL" | "CLONED"
         self.latest_spoof_prob = result["current_spoof_prob"]
         current = self.stack.currentWidget()
 
-        # ── Update ring (single call site) ───────────────────────────────────
-        if current == self.screen_idle:
-            self.screen_idle.circular_meter.set_value(disp_conf, state)
+        # Honest confidence for display:
+        # When CLONED: show spoof risk (e.g. 0.98 for 98% Spoof)
+        # When REAL: show authentic confidence (1.0 - spoof_prob, e.g. 0.98 for 98% Authentic)
+        if state == "CLONED":
+            confidence = self.latest_spoof_prob
+        else:
+            confidence = result["real_confidence_display"]
 
-        # ── Screen transitions ────────────────────────────────────────────────
-        if state == "CLONED" and current == self.screen_idle:
-            # spoof_prob is the cloned confidence; pass it so the alert ring shows it
-            self.trigger_clone_detected(result["current_spoof_prob"])
+        # ── Update ring on active screen (both screen_idle and screen_alert are kept live) ──
+        if current == self.screen_idle:
+            self.screen_idle.circular_meter.set_value(confidence, state)
+        elif current == self.screen_alert:
+            self.screen_alert.circular_meter.set_value(confidence, state)
+
+        # ── Screen transitions — edge-gated ───────────────────────────────────
+        if state == "CLONED" and self._last_emitted_state != "CLONED" and current == self.screen_idle:
+            # Rising edge only: REAL → CLONED — trigger alert ONCE
+            self._last_emitted_state = "CLONED"
+            self.trigger_clone_detected(confidence)
 
         elif state == "REAL" and current == self.screen_alert:
             # Auto-dismiss: real voice resumed — return to idle
+            self._last_emitted_state = "REAL"
             self.show_idle()
-            self.screen_idle.circular_meter.set_value(disp_conf, "REAL")
+            self.screen_idle.circular_meter.set_value(confidence, "REAL")
 
     # ── Background detector thread ────────────────────────────────────────────
 
@@ -281,40 +334,60 @@ class VoiceGuardMainWindow(QMainWindow):
             try:
                 from detector import DetectorModel    # type: ignore
                 from chunker import AudioChunker      # type: ignore
-                from smoother import ConfidenceSmoother, is_silence  # type: ignore
-                from capture import get_loopback_stream              # type: ignore
+                from smoother import ConfidenceSmoother, is_silence, has_enough_voiced_speech  # type: ignore
+                from capture import get_capture_stream # type: ignore
 
                 model    = DetectorModel()
                 chunker  = AudioChunker()
                 smoother = ConfidenceSmoother()
+                self._smoother = smoother
                 t        = 0.0
 
-                # Part 2: read source_label from generator first
-                stream       = get_loopback_stream()
-                source_label = next(stream)           # generator yields label as first value
+                active_source = getattr(self, "audio_source", "loopback")
+                stream = get_capture_stream(active_source)
+                source_label = next(stream)
                 self.signals.model_ready.emit(source_label)
 
-                for audio_block in stream:
+                while True:
+                    # Check if audio source was toggled
+                    new_source = getattr(self, "audio_source", "loopback")
+                    if new_source != active_source:
+                        active_source = new_source
+                        stream = get_capture_stream(active_source)
+                        source_label = next(stream)
+                        self.signals.model_ready.emit(source_label)
+                        if self._smoother:
+                            self._smoother.reset()
+
                     if not self.detector_active:
                         time.sleep(0.1)
                         continue
 
-                    # Emit raw RMS (for optional level display — does NOT update ring)
+                    try:
+                        audio_block = next(stream)
+                    except StopIteration:
+                        break
+
+                    # Emit raw RMS
                     rms = float(np.sqrt(np.mean(np.square(audio_block.astype(np.float64)))))
                     self.signals.audio_level_updated.emit(rms)
 
                     for chunk in chunker.push(audio_block):
-                        # Silence gate — hold state, never feed silence to model
+                        # Silence gate
                         if is_silence(chunk):
-                            continue  # ring does NOT move (Part 5.0 fix)
+                            continue
 
-                        # Predict — no caller-side normalization (detector.py does it)
+                        # VAD gate
+                        if not has_enough_voiced_speech(chunk):
+                            continue
+
+                        # Predict
                         pred   = model.predict(chunk)
 
-                        # Smoother takes spoof_prob float directly
+                        # Smooth
                         result = smoother.update(pred["spoof_prob"], t)
 
-                        # Emit to UI — only path that may call ring.set_value()
+                        # Emit to UI
                         self.signals.detection_updated.emit(result)
 
                         t += chunker.chunk_len / float(chunker.sample_rate)

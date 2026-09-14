@@ -94,6 +94,10 @@ class Screen2CloneAlert(QWidget):
 
     def trigger_alert_transition(self, on_finished=None):
         """Cross-fades background color from COLOR_BG to COLOR_STATE_CLONE_BG over 180ms ease-out."""
+        # BUG 11 FIX: Stop previous animation before creating new one to prevent
+        # the old QVariantAnimation from being garbage-collected while still running.
+        if hasattr(self, "anim") and self.anim is not None:
+            self.anim.stop()
         self.anim = QVariantAnimation(self)
         self.anim.setDuration(tokens.TRANSITION_DURATION_MS)
         self.anim.setEasingCurve(QEasingCurve.Type.OutQuad)

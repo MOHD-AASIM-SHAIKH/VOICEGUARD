@@ -28,7 +28,11 @@ class InferenceRunner(
     private val SILENCE_RMS_THRESHOLD = 0.020f
 
     private val CONSECUTIVE_FRAMES = 3
-    private val CLONE_TRIGGER_THRESHOLD = 0.70f
+    // Hysteresis gap prevents oscillation at boundary:
+    // Need >= 75% spoof probability to enter CLONED state
+    private val CLONE_ENTER_THRESHOLD = 0.75f
+    // Need < 40% spoof probability to exit CLONED state back to REAL
+    private val REAL_ENTER_THRESHOLD  = 0.40f
     private val spoofWindow = ArrayDeque<Float>(CONSECUTIVE_FRAMES)
     var smoothedState = "REAL"
         private set
@@ -141,8 +145,7 @@ class InferenceRunner(
             val sumExp = expVals.sum()
             val probs = expVals.map { it / sumExp }
 
-            val predIdx = probs.indices.maxByOrNull { probs[it] } ?: 1
-            val spoofProb = probs[0] // index 0 = cloned
+            val spoofProb = probs[0] // index 0 = cloned (argmax not needed; we use raw prob)
 
             // Symmetrical confidence smoother matching Part 1.1 spec
             updateSmoother(spoofProb)
@@ -159,20 +162,24 @@ class InferenceRunner(
         spoofWindow.addLast(spoofProb)
 
         if (spoofWindow.size == CONSECUTIVE_FRAMES) {
-            val allCloned = spoofWindow.all { it >= CLONE_TRIGGER_THRESHOLD }
-            val allReal   = spoofWindow.all { it < CLONE_TRIGGER_THRESHOLD }
+            // Hysteresis: require all frames above CLONE threshold to enter CLONED
+            val allCloned = spoofWindow.all { it >= CLONE_ENTER_THRESHOLD }
+            // Require all frames below REAL threshold to exit CLONED back to REAL
+            val allReal   = spoofWindow.all { it < REAL_ENTER_THRESHOLD }
 
             if (allCloned && smoothedState != "CLONED") {
+                // Rising edge: REAL -> CLONED transition
                 smoothedState = "CLONED"
                 onStateChanged?.invoke("CLONED", spoofProb)
+                Log.d(TAG, "STATE TRANSITION: REAL -> CLONED (spoofProb=$spoofProb)")
             } else if (allReal && smoothedState != "REAL") {
+                // Falling edge: CLONED -> REAL transition
                 smoothedState = "REAL"
                 onStateChanged?.invoke("REAL", 1.0f - spoofProb)
-            } else {
-                // State holds (hysteresis) — update confidence display for active state
-                val conf = if (smoothedState == "CLONED") spoofProb else (1.0f - spoofProb)
-                onStateChanged?.invoke(smoothedState, conf)
+                Log.d(TAG, "STATE TRANSITION: CLONED -> REAL (spoofProb=$spoofProb)")
             }
+            // IMPORTANT: No else branch — do NOT fire onStateChanged when state holds.
+            // Only update _confidence via DetectionManager's StateFlow directly.
         }
     }
 

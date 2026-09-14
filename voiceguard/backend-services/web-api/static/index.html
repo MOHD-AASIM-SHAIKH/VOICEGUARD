@@ -129,11 +129,19 @@
     .upload-zone {
       border: 2px dashed rgba(255,255,255,0.12); border-radius: 14px;
       padding: 24px; text-align: center; cursor: pointer;
-      transition: all 0.2s; background: rgba(255,255,255,0.01); margin-bottom: 20px;
+      transition: all 0.25s; background: rgba(255,255,255,0.01); margin-bottom: 20px;
+      user-select: none;
     }
-    .upload-zone:hover { border-color: var(--primary); background: rgba(59,130,246,0.04); }
+    .upload-zone:hover,
+    .upload-zone.drag-over {
+      border-color: var(--primary); background: rgba(59,130,246,0.07);
+      transform: scale(1.01);
+    }
+    .upload-zone.drag-over { border-style: solid; }
     .upload-zone input { display: none; }
-    .upload-icon { font-size: 2rem; margin-bottom: 8px; color: var(--text-muted); }
+    .upload-icon { font-size: 2rem; margin-bottom: 8px; }
+    .upload-title { font-size: 0.9rem; font-weight: 600; margin-bottom: 4px; }
+    .upload-hint  { font-size: 0.75rem; color: var(--text-muted); }
 
     /* ── Audio player ────────────────────────────────────── */
     .audio-player-box {
@@ -152,10 +160,13 @@
       font-size: 1rem; font-weight: 700; cursor: pointer;
       box-shadow: 0 8px 20px rgba(37,99,235,0.35);
       transition: all 0.2s; display: flex; justify-content: center;
-      align-items: center; gap: 8px;
+      align-items: center; gap: 8px; letter-spacing: 0.01em;
     }
-    .btn-analyze:hover { transform: translateY(-2px); box-shadow: 0 12px 24px rgba(37,99,235,0.45); }
-    .btn-analyze:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+    .btn-analyze:hover:not(:disabled) {
+      transform: translateY(-2px); box-shadow: 0 12px 28px rgba(37,99,235,0.5);
+      background: linear-gradient(135deg, #3B82F6, #2563EB);
+    }
+    .btn-analyze:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
 
     /* ── Confidence ring ─────────────────────────────────── */
     .gauge-wrapper {
@@ -166,24 +177,54 @@
       position: relative; width: 220px; height: 220px;
       display: flex; align-items: center; justify-content: center; margin-bottom: 16px;
     }
-    svg.ring-svg { transform: rotate(-90deg); width: 220px; height: 220px; }
+
+    /* Glow ring behind the SVG — animated on CLONED */
+    .ring-glow {
+      position: absolute; inset: 0; border-radius: 50%;
+      transition: box-shadow 0.5s ease;
+      pointer-events: none;
+    }
+    .ring-glow.glow-red  { box-shadow: 0 0 40px 8px rgba(239,68,68,0.35); }
+    .ring-glow.glow-green{ box-shadow: 0 0 28px 4px rgba(16,185,129,0.25); }
+
+    svg.ring-svg { transform: rotate(-90deg); width: 220px; height: 220px; position: relative; z-index: 1; }
     circle.bg-circle      { fill: none; stroke: rgba(255,255,255,0.06); stroke-width: 12; }
     circle.progress-circle {
       fill: none; stroke-width: 12; stroke-linecap: round;
-      transition: stroke-dashoffset 0.8s ease, stroke 0.4s ease;
+      transition: stroke-dashoffset 0.9s cubic-bezier(0.4, 0, 0.2, 1),
+                  stroke 0.4s ease;
     }
     .ring-inner {
-      position: absolute; text-align: center;
+      position: absolute; text-align: center; z-index: 2;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
     }
-    .ring-status { font-size: 1.45rem; font-weight: 800; letter-spacing: 0.05em; margin-bottom: 4px; }
-    .ring-pct    { font-size: 0.9rem; color: var(--text-muted); font-weight: 500; }
+    .ring-status {
+      font-size: 1.5rem; font-weight: 800; letter-spacing: 0.06em;
+      margin-bottom: 4px;
+      transition: color 0.4s ease;
+    }
+    .ring-pct    { font-size: 0.88rem; color: var(--text-muted); font-weight: 500; }
+    .ring-idle   { color: rgba(255,255,255,0.3) !important; }
+
+    /* Scanning animation while waiting */
+    @keyframes scanPulse {
+      0%,100% { stroke-dashoffset: 596; }
+      50%      { stroke-dashoffset: 100; }
+    }
+    .progress-circle.scanning {
+      animation: scanPulse 2s ease-in-out infinite;
+      stroke: rgba(59,130,246,0.6);
+    }
 
     /* ── Verdict banner ──────────────────────────────────── */
     .verdict-banner {
       width: 100%; border-radius: 12px; padding: 14px 18px;
       text-align: center; font-weight: 700; font-size: 0.95rem;
-      letter-spacing: 0.02em; margin-bottom: 20px; transition: all 0.3s;
+      letter-spacing: 0.02em; margin-bottom: 20px; transition: all 0.35s ease;
+    }
+    .verdict-idle {
+      background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+      color: var(--text-muted);
     }
     .verdict-green {
       background: rgba(16,185,129,0.12); border: 1px solid rgba(16,185,129,0.35);
@@ -192,21 +233,22 @@
     .verdict-red {
       background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4);
       color: #F87171; box-shadow: 0 0 28px var(--red-glow);
-      animation: pulseAlert 1.5s infinite;
+      animation: pulseAlert 1.8s ease-in-out infinite;
     }
     @keyframes pulseAlert {
-      0%   { box-shadow: 0 0 15px rgba(239,68,68,0.3); }
-      50%  { box-shadow: 0 0 35px rgba(239,68,68,0.6); }
-      100% { box-shadow: 0 0 15px rgba(239,68,68,0.3); }
+      0%,100% { box-shadow: 0 0 12px rgba(239,68,68,0.25); }
+      50%      { box-shadow: 0 0 40px rgba(239,68,68,0.65); }
     }
 
     /* ── Stats ───────────────────────────────────────────── */
     .stat-row {
-      display: flex; justify-content: space-between;
+      display: flex; justify-content: space-between; align-items: center;
       padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 0.85rem;
     }
     .stat-label { color: var(--text-muted); }
     .stat-val   { font-weight: 600; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; }
+    .stat-val.danger { color: #F87171; }
+    .stat-val.safe   { color: #34D399; }
 
     /* ── Evidence box ────────────────────────────────────── */
     .evidence-box {
@@ -217,25 +259,38 @@
       display: flex; justify-content: space-between; align-items: center;
       margin-bottom: 8px; font-size: 0.78rem; color: var(--text-muted); font-weight: 600;
     }
+    .hash-row {
+      display: flex; align-items: flex-start; gap: 8px;
+    }
     .hash-text {
       font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
-      color: #93C5FD; word-break: break-all;
+      color: #93C5FD; word-break: break-all; flex: 1;
+      line-height: 1.5;
     }
+    .btn-copy {
+      flex-shrink: 0; background: rgba(147,197,253,0.1);
+      border: 1px solid rgba(147,197,253,0.2); border-radius: 6px;
+      color: #93C5FD; font-size: 0.7rem; padding: 3px 8px; cursor: pointer;
+      transition: all 0.2s; white-space: nowrap; font-weight: 600;
+    }
+    .btn-copy:hover { background: rgba(147,197,253,0.2); }
+    .btn-copy.copied { color: #34D399; border-color: rgba(52,211,153,0.3); background: rgba(52,211,153,0.1); }
 
     /* ── Chakshu button ──────────────────────────────────── */
     .btn-chakshu {
-      display: inline-block; width: 100%; text-align: center;
-      background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.3);
-      color: #FCA5A5; padding: 10px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      width: 100%; text-align: center;
+      background: rgba(239,68,68,0.10); border: 1px solid rgba(239,68,68,0.25);
+      color: #FCA5A5; padding: 11px; border-radius: 10px;
       text-decoration: none; font-size: 0.82rem; font-weight: 600;
       margin-top: 14px; transition: all 0.2s;
     }
-    .btn-chakshu:hover { background: rgba(239,68,68,0.25); }
+    .btn-chakshu:hover { background: rgba(239,68,68,0.22); border-color: rgba(239,68,68,0.45); transform: translateY(-1px); }
 
     /* ── Model status banner ─────────────────────────────── */
     .model-status-bar {
       display: none; align-items: center; gap: 8px;
-      background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.3);
+      background: rgba(245,158,11,0.10); border: 1px solid rgba(245,158,11,0.3);
       border-radius: 10px; padding: 10px 14px; margin-bottom: 16px;
       font-size: 0.8rem; color: #FBBF24;
     }
@@ -243,8 +298,8 @@
 
     /* ── Blockchain status ───────────────────────────────── */
     .chain-honest {
-      color: #9CA3AF !important;   /* muted — it's an honest "not connected" status */
-      font-style: italic;
+      color: #6B7280 !important;
+      font-style: italic; font-size: 0.75rem !important;
     }
 
     /* ── Tech pills ──────────────────────────────────────── */
@@ -253,7 +308,7 @@
     }
     .tech-pill {
       background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
-      font-size: 0.75rem; padding: 6px 12px; border-radius: 8px; color: var(--text-muted);
+      font-size: 0.74rem; padding: 5px 12px; border-radius: 8px; color: var(--text-muted);
     }
 
     /* ── Footer ──────────────────────────────────────────── */
@@ -313,11 +368,16 @@
           </div>
         </div>
 
-        <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+        <!-- Upload zone with click AND drag-and-drop support -->
+        <div class="upload-zone" id="uploadZone"
+             onclick="document.getElementById('fileInput').click()"
+             ondragover="handleDragOver(event)"
+             ondragleave="handleDragLeave(event)"
+             ondrop="handleDrop(event)">
           <input type="file" id="fileInput" accept="audio/*" onchange="handleFileUpload(event)">
-          <div class="upload-icon">📁</div>
-          <div style="font-size:0.9rem;font-weight:600;margin-bottom:4px" id="uploadTitle">Click or drag custom audio file</div>
-          <div style="font-size:0.75rem;color:var(--text-muted)">Supports WAV, MP3, FLAC up to 15 MB</div>
+          <div class="upload-icon" id="uploadIcon">📁</div>
+          <div class="upload-title" id="uploadTitle">Click or drag &amp; drop audio file</div>
+          <div class="upload-hint">WAV, MP3, FLAC up to 15 MB</div>
         </div>
 
         <div class="audio-player-box">
@@ -325,7 +385,7 @@
         </div>
 
         <button class="btn-analyze" id="btnAnalyze" onclick="runAnalysis()">
-          <span>⚡ Run Deepfake Voice Analysis</span>
+          <span id="btnLabel">⚡ Run Deepfake Voice Analysis</span>
         </button>
       </div>
 
@@ -336,21 +396,24 @@
 
         <div class="gauge-wrapper">
           <div class="ring-container">
+            <!-- Glow layer -->
+            <div class="ring-glow" id="ringGlow"></div>
             <svg class="ring-svg" viewBox="0 0 220 220" aria-hidden="true">
               <circle class="bg-circle"       cx="110" cy="110" r="95"></circle>
-              <circle class="progress-circle" id="progressCircle" cx="110" cy="110" r="95"
-                      stroke="#10B981"
+              <circle class="progress-circle scanning" id="progressCircle"
+                      cx="110" cy="110" r="95"
+                      stroke="rgba(59,130,246,0.5)"
                       stroke-dasharray="596.9"
-                      stroke-dashoffset="35"></circle>
+                      stroke-dashoffset="596.9"></circle>
             </svg>
             <div class="ring-inner">
-              <div class="ring-status" id="ringStatus" style="color:#10B981">REAL</div>
-              <div class="ring-pct"    id="ringPct">Awaiting analysis</div>
+              <div class="ring-status ring-idle" id="ringStatus">—</div>
+              <div class="ring-pct"              id="ringPct">Awaiting analysis</div>
             </div>
           </div>
         </div>
 
-        <div class="verdict-banner verdict-green" id="verdictBanner">
+        <div class="verdict-banner verdict-idle" id="verdictBanner">
           Run analysis to see verdict
         </div>
 
@@ -367,22 +430,29 @@
           <span class="stat-val" id="valSpoofProb">—</span>
         </div>
         <div class="stat-row">
+          <span class="stat-label">Authenticity Score</span>
+          <span class="stat-val" id="valAuthenticity">—</span>
+        </div>
+        <div class="stat-row">
           <span class="stat-label">Smoother State</span>
           <span class="stat-val" id="valSmootherState">—</span>
         </div>
-        <div class="stat-row">
+        <div class="stat-row" title="No blockchain contract deployed yet — this is an honest prototype status">
           <span class="stat-label">Blockchain Status</span>
           <span class="stat-val chain-honest" id="valChainStatus">—</span>
         </div>
 
         <div class="evidence-box">
           <div class="evidence-header">
-            <span>CRYPTOGRAPHIC EVIDENCE HASH (SHA-256 of incident metadata)</span>
-            <span>SHA-256</span>
+            <span>CRYPTOGRAPHIC EVIDENCE HASH</span>
+            <span style="color:#6B7280;font-weight:400;font-style:italic">SHA-256 · incident metadata</span>
           </div>
-          <div class="hash-text" id="hashText">Run analysis to generate evidence hash</div>
+          <div class="hash-row">
+            <div class="hash-text" id="hashText">Run analysis to generate evidence hash</div>
+            <button class="btn-copy" id="btnCopy" onclick="copyHash()" title="Copy hash">Copy</button>
+          </div>
           <a class="btn-chakshu" id="btnChakshu" href="https://sancharsaathi.gov.in/sfc/" target="_blank" rel="noopener noreferrer">
-            🏛️ File Automated Report to DoT Chakshu Portal
+            🏛️ File Report to DoT Chakshu Portal
           </a>
         </div>
       </div>
@@ -392,7 +462,7 @@
       <div class="tech-pill">🧠 AASIST-L RawNet2 Backbone</div>
       <div class="tech-pill">🔗 AudioChunker + ConfidenceSmoother Pipeline</div>
       <div class="tech-pill">🛡️ Incident-Metadata Evidence Hashing</div>
-      <div class="tech-pill">📱 Cross-Platform (Desktop + Android + Web)</div>
+      <div class="tech-pill">📱 Cross-Platform: Desktop + Android + Web</div>
       <div class="tech-pill">🔗 Chakshu Portal Deep-Link Integration</div>
     </div>
   </main>
@@ -402,62 +472,91 @@
   </footer>
 
   <script>
-    const CIRCLE_CIRCUMFERENCE = 2 * Math.PI * 95; // ≈ 596.9
+    const CIRC = 2 * Math.PI * 95; // ≈ 596.9
     let currentPreset = 'human';
     let uploadedFile  = null;
+    let lastHash      = '';
 
-    // Check /health on load to show warning if model not loaded
+    // ── On load: health check ─────────────────────────────────────────────────
     fetch('/health')
       .then(r => r.json())
-      .then(data => {
-        if (!data.model_loaded) {
+      .then(d => {
+        if (!d.model_loaded) {
           document.getElementById('modelWarning').classList.add('visible');
           document.getElementById('btnAnalyze').disabled = true;
-          document.getElementById('btnAnalyze').innerHTML = '<span>⚠️ Model Not Available</span>';
+          document.getElementById('btnLabel').textContent = '⚠️ Model Not Available';
         }
       })
-      .catch(() => {/* ignore network errors on initial check */});
+      .catch(() => {});
 
+    // ── Preset selection ──────────────────────────────────────────────────────
     function selectPreset(type) {
       currentPreset = type;
       uploadedFile  = null;
       document.getElementById('btnPresetHuman').classList.toggle('active', type === 'human');
       document.getElementById('btnPresetCloned').classList.toggle('active', type === 'cloned');
-      document.getElementById('uploadTitle').textContent = 'Click or drag custom audio file';
-
+      document.getElementById('uploadTitle').textContent = 'Click or drag & drop audio file';
+      document.getElementById('uploadIcon').textContent  = '📁';
       const player = document.getElementById('audioPlayer');
       player.src = `/api/sample/${type}`;
       player.load();
     }
 
+    // ── File upload (click) ───────────────────────────────────────────────────
     function handleFileUpload(e) {
-      if (e.target.files && e.target.files[0]) {
-        uploadedFile = e.target.files[0];
-        document.getElementById('btnPresetHuman').classList.remove('active');
-        document.getElementById('btnPresetCloned').classList.remove('active');
-        document.getElementById('uploadTitle').textContent = `Selected: ${uploadedFile.name}`;
-
-        const player = document.getElementById('audioPlayer');
-        player.src = URL.createObjectURL(uploadedFile);
-        player.load();
-      }
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      setFile(f);
     }
 
-    async function runAnalysis() {
-      const btn = document.getElementById('btnAnalyze');
-      btn.disabled = true;
-      btn.innerHTML = '<span>⏳ Running Neural Inference...</span>';
-
-      const formData = new FormData();
-      if (uploadedFile) {
-        formData.append('file', uploadedFile);
-      } else {
-        formData.append('preset', currentPreset);
+    // ── Drag & drop ───────────────────────────────────────────────────────────
+    function handleDragOver(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      document.getElementById('uploadZone').classList.add('drag-over');
+    }
+    function handleDragLeave(e) {
+      e.preventDefault();
+      document.getElementById('uploadZone').classList.remove('drag-over');
+    }
+    function handleDrop(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      document.getElementById('uploadZone').classList.remove('drag-over');
+      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (!f) return;
+      if (!f.type.startsWith('audio/')) {
+        showError(415, 'Please drop an audio file (WAV, MP3, FLAC)');
+        return;
       }
+      setFile(f);
+    }
+
+    function setFile(f) {
+      uploadedFile = f;
+      document.getElementById('btnPresetHuman').classList.remove('active');
+      document.getElementById('btnPresetCloned').classList.remove('active');
+      document.getElementById('uploadTitle').textContent = `Selected: ${f.name}`;
+      document.getElementById('uploadIcon').textContent  = '🎵';
+      const player = document.getElementById('audioPlayer');
+      player.src = URL.createObjectURL(f);
+      player.load();
+    }
+
+    // ── Run analysis ──────────────────────────────────────────────────────────
+    async function runAnalysis() {
+      const btn   = document.getElementById('btnAnalyze');
+      const label = document.getElementById('btnLabel');
+      btn.disabled = true;
+      label.textContent = '⏳ Running Neural Inference...';
+      setRingScanning(true);
+
+      const fd = new FormData();
+      if (uploadedFile) fd.append('file', uploadedFile);
+      else              fd.append('preset', currentPreset);
 
       try {
-        const res = await fetch('/api/analyze', { method: 'POST', body: formData });
-
+        const res = await fetch('/api/analyze', { method: 'POST', body: fd });
         if (!res.ok) {
           const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
           const msg = typeof err.detail === 'object'
@@ -466,71 +565,122 @@
           showError(res.status, msg);
           return;
         }
-
-        const data = await res.json();
-        updateUI(data);
+        updateUI(await res.json());
       } catch (err) {
         showError(0, `Network error: ${err.message}`);
       } finally {
         btn.disabled = false;
-        btn.innerHTML = '<span>⚡ Run Deepfake Voice Analysis</span>';
+        label.textContent = '⚡ Run Deepfake Voice Analysis';
+        setRingScanning(false);
       }
     }
 
-    function showError(status, message) {
-      const banner = document.getElementById('verdictBanner');
-      banner.className = 'verdict-banner verdict-red';
-      banner.textContent = `Error ${status}: ${message}`;
+    // ── Ring helpers ──────────────────────────────────────────────────────────
+    function setRingScanning(on) {
+      const c = document.getElementById('progressCircle');
+      if (on) {
+        c.classList.add('scanning');
+        c.style.stroke = 'rgba(59,130,246,0.6)';
+        c.style.strokeDashoffset = '';   // let animation control it
+      } else {
+        c.classList.remove('scanning');
+      }
     }
 
+    // ── Main UI update ────────────────────────────────────────────────────────
     function updateUI(data) {
-      const circle   = document.getElementById('progressCircle');
-      const status   = document.getElementById('ringStatus');
-      const pct      = document.getElementById('ringPct');
-      const banner   = document.getElementById('verdictBanner');
-      const latency  = document.getElementById('valLatency');
-      const spoof    = document.getElementById('valSpoofProb');
-      const smoother = document.getElementById('valSmootherState');
-      const chain    = document.getElementById('valChainStatus');
-      const hash     = document.getElementById('hashText');
-      const chakshu  = document.getElementById('btnChakshu');
+      const circle     = document.getElementById('progressCircle');
+      const status     = document.getElementById('ringStatus');
+      const pct        = document.getElementById('ringPct');
+      const banner     = document.getElementById('verdictBanner');
+      const glow       = document.getElementById('ringGlow');
+      const latency    = document.getElementById('valLatency');
+      const spoofEl    = document.getElementById('valSpoofProb');
+      const authEl     = document.getElementById('valAuthenticity');
+      const smootherEl = document.getElementById('valSmootherState');
+      const chainEl    = document.getElementById('valChainStatus');
+      const hashEl     = document.getElementById('hashText');
+      const chakshu    = document.getElementById('btnChakshu');
 
-      // Confidence ring
-      const conf   = (data.confidence_pct || 0) / 100;
-      const offset = CIRCLE_CIRCUMFERENCE * (1 - conf);
+      const spoof_prob = data.spoof_prob != null ? data.spoof_prob : 0.5;
+
+      // ── Ring fill logic (THE key fix) ─────────────────────────────────────
+      // The ring ALWAYS represents AUTHENTICITY (how real the voice is):
+      //   authenticity = 1 - spoof_prob
+      // REAL   → high authenticity → ring mostly full  → GREEN
+      // CLONED → low authenticity  → ring mostly empty → RED
+      const authenticity     = 1.0 - spoof_prob;          // 0 = fully cloned, 1 = fully real
+      const authenticityPct  = Math.round(authenticity * 100);
+      const offset           = CIRC * (1 - authenticity);
+
       circle.style.strokeDashoffset = offset;
 
       if (data.is_cloned) {
+        // Ring mostly empty (low authenticity), RED
         circle.style.stroke = '#EF4444';
         status.style.color  = '#EF4444';
+        status.classList.remove('ring-idle');
         status.textContent  = 'CLONED';
-        pct.textContent     = `${data.confidence_pct}% AI Synthetic`;
+        pct.textContent     = `${authenticityPct}% Authentic`;
         banner.className    = 'verdict-banner verdict-red';
-        banner.textContent  = '⚠️ CRITICAL: AI VOICE CLONE DETECTED';
+        banner.textContent  = '⚠️  CRITICAL: AI VOICE CLONE DETECTED';
+        glow.className      = 'ring-glow glow-red';
+        spoofEl.className   = 'stat-val danger';
+        authEl.className    = 'stat-val danger';
       } else {
+        // Ring mostly full (high authenticity), GREEN
         circle.style.stroke = '#10B981';
         status.style.color  = '#10B981';
+        status.classList.remove('ring-idle');
         status.textContent  = 'REAL';
-        pct.textContent     = `${data.confidence_pct}% Authentic`;
+        pct.textContent     = `${authenticityPct}% Authentic`;
         banner.className    = 'verdict-banner verdict-green';
-        banner.textContent  = '✅ AUTHENTIC HUMAN VOICE';
+        banner.textContent  = '✅  AUTHENTIC HUMAN VOICE';
+        glow.className      = 'ring-glow glow-green';
+        spoofEl.className   = 'stat-val';
+        authEl.className    = 'stat-val safe';
       }
 
-      latency.textContent  = data.latency_ms != null ? `${data.latency_ms} ms` : '—';
-      spoof.textContent    = data.spoof_prob != null ? data.spoof_prob.toFixed(4) : '—';
-      smoother.textContent = data.smoother_state || '—';
+      latency.textContent    = data.latency_ms != null ? `${data.latency_ms} ms` : '—';
+      spoofEl.textContent    = spoof_prob.toFixed(4);
+      authEl.textContent     = `${authenticityPct}%`;
+      smootherEl.textContent = data.smoother_state || '—';
+      smootherEl.className   = 'stat-val' + (data.smoother_state === 'CLONED' ? ' danger' : ' safe');
+      chainEl.textContent    = data.blockchain_status || '—';
 
-      // Blockchain status — display honestly (muted, not as a claim of verified status)
-      chain.textContent    = data.blockchain_status || '—';
-
-      // Evidence hash — from incident metadata, not raw audio
-      hash.textContent     = data.evidence_hash || '—';
+      lastHash = data.evidence_hash || '';
+      hashEl.textContent = lastHash || '—';
       if (data.chakshu_url) chakshu.href = data.chakshu_url;
 
-      // Silence warning
       if (data.all_silence) {
-        pct.textContent = 'Audio appears to be silence';
+        pct.textContent = 'Audio appears silent — no speech detected';
       }
+    }
+
+    // ── Error display ─────────────────────────────────────────────────────────
+    function showError(status, message) {
+      setRingScanning(false);
+      const banner = document.getElementById('verdictBanner');
+      banner.className = 'verdict-banner verdict-red';
+      banner.textContent = `Error ${status || ''}: ${message}`;
+    }
+
+    // ── Copy hash ─────────────────────────────────────────────────────────────
+    function copyHash() {
+      if (!lastHash) return;
+      navigator.clipboard.writeText(lastHash).then(() => {
+        const btn = document.getElementById('btnCopy');
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+      }).catch(() => {
+        // Fallback: select text
+        const el = document.getElementById('hashText');
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        window.getSelection().removeAllRanges();
+        window.getSelection().addRange(range);
+      });
     }
   </script>
 </body>

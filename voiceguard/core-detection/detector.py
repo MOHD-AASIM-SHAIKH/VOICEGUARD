@@ -51,10 +51,16 @@ class DetectorModel:
         """
         chunk = chunk.astype(np.float32)
 
-        # ── Normalization (exactly once, here) ──────────────────────────────
+        # ── Gain-limited Speech AGC Normalization ─────────────────────────
+        # Avoid amplifying ambient noise / breath pauses into high-amplitude noise walls.
         max_amp = float(np.max(np.abs(chunk))) if len(chunk) > 0 else 0.0
-        if max_amp > 0.001:
-            chunk = (chunk / (max_amp + 1e-8) * 0.85)
+        if max_amp >= 0.015:
+            # Scale towards 0.80 peak, but limit gain multiplier to at most 4.0x
+            gain = min(4.0, 0.80 / (max_amp + 1e-8))
+            chunk = chunk * gain
+        elif max_amp > 0.001:
+            # Low ambient noise — apply minimal gentle scaling without noise explosion
+            chunk = chunk * min(1.5, 0.80 / (max_amp + 1e-8))
 
         # ── Length guarantee (chunker already provides window_len=64600, this is a safety net) ──
         if len(chunk) > 64600:

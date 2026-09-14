@@ -20,6 +20,7 @@ class Screen1Listening(QWidget):
     simulate_clone_clicked = Signal()
     guarded_tx_clicked = Signal()
     blockchain_ledger_clicked = Signal()
+    source_toggle_clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -40,20 +41,32 @@ class Screen1Listening(QWidget):
         col_layout.setContentsMargins(tokens.SPACE_5, tokens.SPACE_6, tokens.SPACE_5, tokens.SPACE_6)
         col_layout.setSpacing(0)
         
-        # Top Blockchain Trust Badge
-        self.badge_label = QLabel("⛓️ Polygon Amoy Notary Active")
-        font_badge = QFont("Inter")
-        font_badge.setPixelSize(12)
+        # Top Badges Row: Blockchain Trust Badge + Audio Source Toggle Button
+        badge_row = QHBoxLayout()
+        badge_row.setSpacing(8)
+        
+        self.badge_label = QLabel("⛓️ Amoy Notary")
+        font_badge = QFont("Segoe UI")
+        font_badge.setPixelSize(11)
         font_badge.setWeight(QFont.Weight.Medium)
         self.badge_label.setFont(font_badge)
         self.badge_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.badge_label.setStyleSheet(
-            "color: #4F46E5; background-color: #EEF2FF; border-radius: 12px; padding: 4px 12px; border: 1px solid #C7D2FE;"
+            "color: #4F46E5; background-color: #EEF2FF; border-radius: 12px; padding: 4px 10px; border: 1px solid #C7D2FE;"
         )
-        badge_row = QHBoxLayout()
-        badge_row.addStretch()
         badge_row.addWidget(self.badge_label)
-        badge_row.addStretch()
+
+        self.btn_toggle_source = QPushButton("🎙️ Mic Mode")
+        self.btn_toggle_source.setFont(font_badge)
+        self.btn_toggle_source.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_toggle_source.setToolTip("Click to switch audio input between System Loopback (Calls) and Microphone")
+        self.btn_toggle_source.setStyleSheet(
+            "QPushButton { color: #0F766E; background-color: #F0FDFA; border-radius: 12px; padding: 4px 10px; border: 1px solid #99F6E4; font-weight: 600; }"
+            "QPushButton:hover { background-color: #CCFBF1; }"
+        )
+        self.btn_toggle_source.clicked.connect(self.source_toggle_clicked.emit)
+        badge_row.addWidget(self.btn_toggle_source)
+
         col_layout.addLayout(badge_row)
         col_layout.addSpacing(tokens.SPACE_4)
         

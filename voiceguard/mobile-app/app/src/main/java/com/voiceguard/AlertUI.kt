@@ -53,6 +53,7 @@ class AlertUI : Activity() {
 
     private var lastState      = "REAL"
     private var lastConfidence = 0f
+    private var hasVibratedForCurrentClone = false  // Edge-gate: vibrate once per clone event
 
     companion object {
         var currentActivity: AlertUI? = null
@@ -247,11 +248,18 @@ class AlertUI : Activity() {
         if (state == "CLONED") {
             hangUpBtn.visibility = View.VISIBLE
             statusLabel.text = "Clone voice detected"
-            vibrate()
+            // Only vibrate on rising edge (first time we see CLONED, not on every tick)
+            if (lastState != "CLONED" && !hasVibratedForCurrentClone) {
+                hasVibratedForCurrentClone = true
+                vibrate()
+            }
         } else {
             hangUpBtn.visibility = View.GONE
             statusLabel.text = "Monitoring"
+            // Reset vibration gate when we return to REAL
+            hasVibratedForCurrentClone = false
         }
+        lastState = state
     }
 
     // ── Actions ───────────────────────────────────────────────────────────────
