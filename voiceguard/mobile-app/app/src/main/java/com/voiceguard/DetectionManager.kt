@@ -72,9 +72,11 @@ object DetectionManager {
 
         try {
             inferenceRunner = InferenceRunner(ctx) { newState, conf ->
+                val wasCloned = _detectionState.value == "CLONED"
                 _detectionState.value = newState
                 _confidence.value = conf
-                if (newState == "CLONED") {
+                // Only trigger vibration on rising edge (first entry into CLONED state)
+                if (newState == "CLONED" && !wasCloned) {
                     triggerVibration()
                 }
             }

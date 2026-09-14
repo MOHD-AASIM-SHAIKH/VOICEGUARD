@@ -24,9 +24,8 @@ class InferenceRunner(
     private val onStateChanged: ((state: String, confidence: Float) -> Unit)? = null
 ) {
     private val TAG = "VoiceGuardInference"
-    private val LABEL_MAP = mapOf(0 to "cloned", 1 to "real")
-    // Aligned with Python Part 1.1: SILENCE_RMS_THRESHOLD = 0.01
-    private val SILENCE_RMS_THRESHOLD = 0.01f
+    private val LABEL_MAP = mapOf(0 to "cloned", 1 to "real") // Calibrated for Android microphone acoustic noise floor
+    private val SILENCE_RMS_THRESHOLD = 0.020f
 
     private val CONSECUTIVE_FRAMES = 3
     private val CLONE_TRIGGER_THRESHOLD = 0.70f
@@ -56,28 +55,31 @@ class InferenceRunner(
 
     fun isSilence(audio: FloatArray): Boolean {
         var sumSquares = 0.0
+        var maxAmp = 0f
         for (sample in audio) {
             sumSquares += (sample * sample).toDouble()
+            val abs = Math.abs(sample)
+            if (abs > maxAmp) maxAmp = abs
         }
         val rms = Math.sqrt(sumSquares / audio.size).toFloat()
-        return rms < SILENCE_RMS_THRESHOLD
+        // If RMS is below threshold OR peak amplitude is below 0.05f, audio is ambient silence
+        return (rms < SILENCE_RMS_THRESHOLD || maxAmp < 0.05f)
     }
 
     fun predict(chunk: FloatArray): InferenceResult? {
         if (isSilence(chunk)) {
-            return null // Silence-gated
+            return null // Silence-gated — do not run model on ambient silence
         }
 
         try {
             if (!modelLoaded || model == null) {
                 loadModelAsync()
                 if (model == null) {
-                    // Fallback to REAL if model cannot be loaded yet
                     return InferenceResult("real", 0.95f, 0.05f)
                 }
             }
 
-            // 1. Ensure target length (64600 samples) using repeat-padding
+            // 1. Ensure target length (64600 samples)
             val targetLen = 64600
             val preparedAudio: FloatArray = if (chunk.size == targetLen) {
                 chunk
@@ -91,7 +93,29 @@ class InferenceRunner(
                 padded
             }
 
-            // 2. Peak normalize to 0.85f to match AASIST-L training distribution
+            // 2. Measure voiced speech duration on RAW un-normalized audio (speech energy >= 0.015)
+            val frameLen = 320
+            val numFrames = preparedAudio.size / frameLen
+            var voicedFrames = 0
+            for (f in 0 until numFrames) {
+                var sumSq = 0.0
+                val offset = f * frameLen
+                for (i in 0 until frameLen) {
+                    val s = preparedAudio[offset + i]
+                    sumSq += (s * s).toDouble()
+                }
+                if (Math.sqrt(sumSq / frameLen) >= 0.015) {
+                    voicedFrames++
+                }
+            }
+            val voicedDuration = (voicedFrames * frameLen) / 16000f
+
+            // If less than 0.6s of actual speech energy in 4s window, this is ambient noise
+            if (voicedDuration < 0.6f) {
+                return null // Hold state silently
+            }
+
+            // 3. Peak normalize to 0.85f to match AASIST-L training distribution
             var maxAmp = 0f
             for (s in preparedAudio) {
                 val abs = Math.abs(s)
@@ -106,23 +130,6 @@ class InferenceRunner(
                 preparedAudio
             }
 
-            // 3. Measure voiced duration in chunk (20ms frames @ 16kHz = 320 samples)
-            val frameLen = 320
-            val numFrames = normalizedAudio.size / frameLen
-            var voicedFrames = 0
-            for (f in 0 until numFrames) {
-                var sumSq = 0.0
-                val offset = f * frameLen
-                for (i in 0 until frameLen) {
-                    val s = normalizedAudio[offset + i]
-                    sumSq += (s * s).toDouble()
-                }
-                if (Math.sqrt(sumSq / frameLen) >= 0.003) {
-                    voicedFrames++
-                }
-            }
-            val voicedDuration = (voicedFrames * frameLen) / 16000f
-
             val inputTensor = Tensor.fromBlob(normalizedAudio, longArrayOf(1, normalizedAudio.size.toLong()))
             val outputs = model!!.forward(IValue.from(inputTensor)).toTuple()
             val logits = outputs[1].toTensor()
@@ -135,15 +142,7 @@ class InferenceRunner(
             val probs = expVals.map { it / sumExp }
 
             val predIdx = probs.indices.maxByOrNull { probs[it] } ?: 1
-            val label = LABEL_MAP[predIdx] ?: "real"
-            val confidence = probs[predIdx]
             val spoofProb = probs[0] // index 0 = cloned
-
-            // Prevent false alarms on short isolated syllables (< 1.0s voiced speech like saying 'hello')
-            if (voicedDuration < 1.0f) {
-                updateSmoother(0.05f)
-                return InferenceResult("real", 0.95f, 0.05f)
-            }
 
             // Symmetrical confidence smoother matching Part 1.1 spec
             updateSmoother(spoofProb)
