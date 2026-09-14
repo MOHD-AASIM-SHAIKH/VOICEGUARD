@@ -152,40 +152,45 @@ async def analyze_audio(
                 pass
 
     if samples is None:
-        # Use preset
+        # Use preset — generate synthetic audio then run through real model
         mode = "cloned" if preset == "cloned" else "human"
         samples = generate_synthetic_audio(mode)
-    
-    # Calculate audio SHA-256 evidence hash
+
+    # Calculate audio SHA-256 evidence hash (always on real audio bytes)
     sha256 = hashlib.sha256(samples.tobytes()).hexdigest()
 
-    # Model inference
+    # ── Real AASIST-L Model Inference ──────────────────────────────────────────
+    # ALL paths (uploaded files AND presets) run through the actual model.
+    # We only fall back to safe defaults if the model weights are unavailable.
     is_cloned = False
     confidence = 0.94
     spoof_prob = 0.06
 
-    if file and file.filename and model is not None and MODEL_READY:
+    if model is not None and MODEL_READY:
         try:
             pred = model.predict(samples)
             spoof_prob = float(pred["spoof_prob"])
-            # Threshold from blueprint: spoof_prob > 0.45 flags as cloned
+            # Threshold: spoof_prob > 0.45 flags as cloned (from blueprint spec)
             is_cloned = spoof_prob > 0.45
             confidence = spoof_prob if is_cloned else (1.0 - spoof_prob)
+            print(f"[AASIST-L] spoof_prob={spoof_prob:.4f} → {'CLONED' if is_cloned else 'REAL'} ({confidence*100:.1f}%)")
         except Exception as e:
-            print(f"Model predict error on upload: {e}")
+            print(f"[AASIST-L] Model predict error: {e}")
+            # Safe fallback — do not crash the endpoint
             is_cloned = False
             confidence = 0.91
             spoof_prob = 0.09
-    elif preset == "cloned":
-        # Guaranteed deterministic demo preset: Cloned AI Deepfake
-        is_cloned = True
-        confidence = 0.982
-        spoof_prob = 0.982
     else:
-        # Guaranteed deterministic demo preset: Authentic Human Speech
-        is_cloned = False
-        confidence = 0.946
-        spoof_prob = 0.054
+        # Model not loaded (missing weights on server) — deterministic fallback for demo
+        print("[AASIST-L] Model not available — using deterministic preset fallback")
+        if preset == "cloned":
+            is_cloned = True
+            confidence = 0.982
+            spoof_prob = 0.982
+        else:
+            is_cloned = False
+            confidence = 0.946
+            spoof_prob = 0.054
 
     elapsed_ms = int((time.time() - start_time) * 1000)
 
@@ -207,7 +212,8 @@ async def analyze_audio(
         "blockchain_status": "Polygon Amoy Block #892104 • Verified",
         "chakshu_url": chakshu_url,
         "latency_ms": elapsed_ms,
-        "model_architecture": "AASIST-L (Raw Graph Waveform Network)"
+        "model_architecture": "AASIST-L (Raw Graph Waveform Network)",
+        "model_live": MODEL_READY,
     })
 
 @app.get("/", response_class=HTMLResponse)
