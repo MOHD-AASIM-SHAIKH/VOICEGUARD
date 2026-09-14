@@ -25,11 +25,12 @@ class InferenceRunner(
 ) {
     private val TAG = "VoiceGuardInference"
     private val LABEL_MAP = mapOf(0 to "cloned", 1 to "real")
-    private val SILENCE_RMS_THRESHOLD = 0.0015f
+    // Aligned with Python Part 1.1: SILENCE_RMS_THRESHOLD = 0.01
+    private val SILENCE_RMS_THRESHOLD = 0.01f
 
-    private val CONSECUTIVE_THRESHOLD = 3
-    private val WINDOW_SIZE = 6
-    private val window = ArrayDeque<String>(WINDOW_SIZE)
+    private val CONSECUTIVE_FRAMES = 3
+    private val CLONE_TRIGGER_THRESHOLD = 0.70f
+    private val spoofWindow = ArrayDeque<Float>(CONSECUTIVE_FRAMES)
     var smoothedState = "REAL"
         private set
 
@@ -140,36 +141,38 @@ class InferenceRunner(
 
             // Prevent false alarms on short isolated syllables (< 1.0s voiced speech like saying 'hello')
             if (voicedDuration < 1.0f) {
-                updateSmoother("real", 0.95f, 0.05f)
+                updateSmoother(0.05f)
                 return InferenceResult("real", 0.95f, 0.05f)
             }
 
-            updateSmoother(label, confidence, spoofProb)
-            return InferenceResult(label, confidence, spoofProb)
+            // Symmetrical confidence smoother matching Part 1.1 spec
+            updateSmoother(spoofProb)
+            val displayConf = if (smoothedState == "CLONED") spoofProb else (1.0f - spoofProb)
+            return InferenceResult(smoothedState.lowercase(), displayConf, spoofProb)
         } catch (t: Throwable) {
             Log.e(TAG, "Prediction execution failed: ${t.message}", t)
-            return InferenceResult("real", 0.92f, 0.08f)
+            return InferenceResult("real", 0.95f, 0.05f)
         }
     }
 
-    private fun updateSmoother(label: String, confidence: Float, spoofProb: Float = 0.0f) {
-        if (window.size >= WINDOW_SIZE) window.pollFirst()
-        window.addLast(label)
+    private fun updateSmoother(spoofProb: Float) {
+        if (spoofWindow.size >= CONSECUTIVE_FRAMES) spoofWindow.pollFirst()
+        spoofWindow.addLast(spoofProb)
 
-        val recent = window.toList().takeLast(CONSECUTIVE_THRESHOLD)
-        val cloneCount = recent.count { it == "cloned" }
-        val realCount = recent.count { it == "real" }
+        if (spoofWindow.size == CONSECUTIVE_FRAMES) {
+            val allCloned = spoofWindow.all { it >= CLONE_TRIGGER_THRESHOLD }
+            val allReal   = spoofWindow.all { it < CLONE_TRIGGER_THRESHOLD }
 
-        // Fast high-confidence clone trigger: immediate if spoofProb >= 0.70f or 2 of 3 frames cloned
-        if (spoofProb >= 0.70f || cloneCount >= 2) {
-            if (smoothedState != "CLONED") {
+            if (allCloned && smoothedState != "CLONED") {
                 smoothedState = "CLONED"
-                onStateChanged?.invoke("CLONED", if (spoofProb >= 0.70f) spoofProb else confidence)
-            }
-        } else if (realCount >= 2 && spoofProb < 0.35f) {
-            if (smoothedState != "REAL") {
+                onStateChanged?.invoke("CLONED", spoofProb)
+            } else if (allReal && smoothedState != "REAL") {
                 smoothedState = "REAL"
-                onStateChanged?.invoke("REAL", confidence)
+                onStateChanged?.invoke("REAL", 1.0f - spoofProb)
+            } else {
+                // State holds (hysteresis) — update confidence display for active state
+                val conf = if (smoothedState == "CLONED") spoofProb else (1.0f - spoofProb)
+                onStateChanged?.invoke(smoothedState, conf)
             }
         }
     }

@@ -201,19 +201,13 @@ object DetectionManager {
                         val newFloats = FloatArray(read) { readBuffer[it] / 32768f }
                         sampleBuffer = sampleBuffer + newFloats
 
-                        // Cap buffer to prevent memory growth
-                        if (sampleBuffer.size > WINDOW_LEN * 2) {
-                            sampleBuffer = sampleBuffer.copyOfRange(sampleBuffer.size - WINDOW_LEN, sampleBuffer.size)
+                        // Cap buffer to prevent unbounded memory growth
+                        if (sampleBuffer.size > WINDOW_LEN * 3) {
+                            sampleBuffer = sampleBuffer.copyOfRange(sampleBuffer.size - WINDOW_LEN * 2, sampleBuffer.size)
                         }
 
-                        // Fast responsive inference: if at least 1.5s (24000 samples) captured, predict early
-                        if (sampleBuffer.size in 24000 until WINDOW_LEN) {
-                            val res = inferenceRunner?.predict(sampleBuffer)
-                            if (res != null) {
-                                _confidence.value = res.confidence
-                            }
-                        }
-
+                        // Part 1.2: Short utterances are not isolated & repeat-padded.
+                        // They accumulate in the rolling 4.04s buffer of contiguous real audio.
                         while (sampleBuffer.size >= WINDOW_LEN) {
                             val window = sampleBuffer.copyOfRange(0, WINDOW_LEN)
                             sampleBuffer = sampleBuffer.copyOfRange(HOP_LEN, sampleBuffer.size)

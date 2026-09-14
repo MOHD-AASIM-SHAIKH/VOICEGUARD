@@ -70,13 +70,13 @@ fun CircularConfidenceMeter(
 
     val stateText = when (state) {
         DetectionState.REAL -> "REAL"
-        DetectionState.CLONE -> "CLONE"
+        DetectionState.CLONE -> "CLONED"
         DetectionState.PAUSED -> "PAUSED"
     }
 
     val percentageText = when (state) {
-        DetectionState.REAL -> "${(confidence * 100).toInt()}% Authentic"
-        DetectionState.CLONE -> "${(confidence * 100).toInt()}% AI Spoof"
+        DetectionState.REAL -> if (confidence < 0.01f) "Starting…" else "${(confidence * 100).toInt()}% Authentic"
+        DetectionState.CLONE -> "${(confidence * 100).toInt()}% AI Cloned"
         DetectionState.PAUSED -> "Monitoring Off"
     }
 
@@ -110,32 +110,39 @@ fun CircularConfidenceMeter(
         // Inside center details
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(horizontal = 24.dp)
         ) {
             Text(
                 text = stateText,
                 style = VoiceGuardTheme.typography.display.copy(
                     color = activeColor,
-                    fontSize = TextUnit(34f, TextUnitType.Sp)
+                    fontSize = TextUnit(26f, TextUnitType.Sp),
+                    fontWeight = FontWeight.Bold
                 ),
                 textAlign = TextAlign.Center
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = percentageText,
                 style = VoiceGuardTheme.typography.subtitle.copy(
                     color = VoiceGuardTheme.colors.textPrimary,
-                    fontSize = TextUnit(15f, TextUnitType.Sp),
+                    fontSize = TextUnit(13.5f, TextUnitType.Sp),
                     fontWeight = FontWeight.SemiBold
                 ),
                 textAlign = TextAlign.Center
             )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = caption,
-                style = VoiceGuardTheme.typography.caption.copy(color = VoiceGuardTheme.colors.textSecondary),
-                textAlign = TextAlign.Center
-            )
+            if (caption.isNotBlank()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = caption,
+                    style = VoiceGuardTheme.typography.caption.copy(
+                        color = VoiceGuardTheme.colors.textSecondary,
+                        fontSize = TextUnit(11f, TextUnitType.Sp)
+                    ),
+                    textAlign = TextAlign.Center
+                )
+            }
         }
     }
 }
